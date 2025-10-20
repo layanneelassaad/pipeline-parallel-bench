@@ -1,0 +1,6 @@
+torch==2.8.*       
+pandas>=2.2
+matplotlib>=3.8
+numpy>=1.26
+pytest>=8.2
+pre-commit>=3.7

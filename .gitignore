@@ -1,0 +1,49 @@
+# OS / Editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+env/
+.python-version
+
+# Packaging / build
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Jupyter
+.ipynb_checkpoints/
+.ipython/
+.profile_default/
+
+# Env / secrets
+.env
+.env.*
+*.env
+
+# Logs
+*.log
+
+# Coverage / test caches
+.coverage
+htmlcov/
+.cache/
+.mypy_cache/
+.pytest_cache/
+
+# Results:
+# Ignore everything in results/ by default…
+results/*
+# …but KEEP plots and the small summary table so they appear on GitHub
+!results/.gitkeep
+!results/*.png
+!results/pp_analysis_dedupe.csv
+# (Large raw CSVs remain ignored: pp_results_fast.csv / pp_results.csv)
