@@ -34,21 +34,20 @@ These bubbles add roughly `O(K)` fixed cost per mini-batch. The schedules below 
 - Idea: Use many micro-batches ($M ≫ K$) so the pipeline fills quickly and stays full. All forward passes are pipelined first, then all backward passes are pipelined. With M micro-batches in flight, stages stay busy after a short warm-up because each stage is always receiving the next micro-batch.
 - Bubbles and timing: There is an initial forward fill (about K−1 ticks) before the tail can start, and a forward drain (about K−1 ticks) after the head finishes its last forward. The same pattern repeats for backward. Because M is large, those fixed K-dependent gaps are amortized over many micro-batches, so the fraction of time lost to bubbles shrinks as M grows.
 - Memory: Each stage must retain activations for every micro-batch until its backward arrives, so activation memory scales as O(M). This makes GPipe simple and effective when you can afford larger activation footprints or use activation checkpointing.
-- CPU consideration: On CPU, GPipe can look surprisingly strong at larger process counts because it has fewer cross-rank hand-offs per unit of useful work. When each stage is “cheap,” the extra synchronization that other schedules introduce can dominate, letting GPipe’s simplicity win.
+
 
 
 ### 1F1B
 - Idea: After a short warm-up, each stage alternates one forward and one backward. As soon as the tail finishes the forward of μ₁, it immediately begins the backward of μ₁ while the head continues feeding new forwards. Forward and backward waves interleave through the pipe. Downstream stages are doing backward on early micro-batches while upstream stages advance forward on later ones. The head doesn’t have to finish all forwards before any backward can start, and the tail doesn’t sit idle waiting for all forwards to complete.
 - Bubbles and timing: The overlap removes the large “middle” idle regions. You still pay the initial forward fill and the final backward drain (about K−1 ticks each), but the long gap between forward and backward phases largely disappears, improving utilization at a fixed M.
 - Memory: Activations are held only until the corresponding backward returns, which is bounded by the pipeline depth, so activation memory scales as O(K). This is the primary advantage over GPipe when memory is tight or when you cannot raise M.
-- CPU consideration: The alternation introduces more frequent synchronization events than GPipe. At small process counts this cost is outweighed by better overlap; at larger counts on CPU, barrier and context-switch overhead can erode the advantage.
+
   
 ### Interleaved-1F1B (with virtual stages)
 - Idea: Split each physical stage into v smaller, sequential “virtual stages,” producing K·v shorter stages overall. Micro-batches traverse chunk 0 on all ranks, then chunk 1 on all ranks, and so on, while still following the 1F1B alternation.  By shortening each stage, the time to move a micro-batch from head to tail (and back) drops. The pipe fills and drains faster because each hop is cheaper, and more fine-grained stages keep ranks busier between alternated forward and backward steps.
 - Bubbles and timing: Fill and drain latencies shrink approximately in proportion to 1/v, so the fixed bubble time is reduced without having to increase M. This is especially helpful when M cannot be made very large due to memory constraints or latency goals.
 - Memory: Like 1F1B, activation memory remains bounded by O(K) because backward begins promptly relative to when forward produced the activations, independent of M.
-- CPU consideration: The finer segmentation increases cross-rank hand-offs by about a factor of v. On CPU with the gloo backend, the additional sends/receives and barriers can outweigh the shorter stage latency at higher process counts, so gains are most visible at small P or when per-stage compute is sufficiently large to hide communication.
-  
+
 ---
 
 ## Why compare on **CPU distributed training**?
@@ -151,6 +150,15 @@ At P=2 the winners sit near 50–60 percent efficiency for example 4L-4H with 1F
 Going from 2 to 4 processes increases throughput but scales poorly on CPU at roughly 25 percent efficiency because communication and synchronization dominate. At P=2 both 1F1B and Interleaved maintain roughly 50–60 percent. At P=4 their scheduling advantages are largely eaten by overhead.
 
 A forward-then-backward pipeline of M micro-batches costs ≈ `2M + 2(K−1)` ticks. **1F1B** overlaps the middle bubbles, reducing the fixed `O(K)` overhead. Interleaved shortens fill/drain by `1/v` with virtual stages. On CPU, the added inter-rank hand-offs at higher **P** can outweigh those savings.
+
+
+### Why these patterns appear on CPU
+
+- GPipe. Fewer cross-rank hand-offs and simpler coordination per unit of useful work. At higher process counts this lower communication footprint can outweigh bubble costs, which matches the cases where GPipe is competitive or best.
+
+- 1F1B. Alternating forward and backward creates more frequent synchronization than GPipe. At small process counts the overlap benefit dominates and we see clear wins. At higher process counts on CPU the extra barriers and context switches reduce or erase the advantage.
+
+- Interleaved. Splitting into v virtual stages reduces fill and drain time but increases cross-rank hand-offs by about v. At small process counts and wider models this keeps ranks busy and can win. At higher process counts on CPU the extra sends and receives and scheduling overhead offset the bubble savings, leading to parity or a small deficit.
 
 
 ## CPU impact:
