@@ -1,8 +1,9 @@
 # Pipeline Parallelism Benchmarks (PyTorch, CPU)
 
-This repo compares **GPipe**, **1F1B**, and **Interleaved-1F1B** pipeline schedules using PyTorch’s
-`torch.distributed.pipelining` with **CPU distributed training**. It provides a CLI runner, a small grid sweep,
-and an analysis script that turns CSV into plots for **speedup vs GPipe** and **scaling efficiency**.
+This repo compares GPipe, 1F1B, and Interleaved-1F1B pipeline schedules using PyTorch’s
+`torch.distributed.pipelining` with CPU distributed training. It provides a CLI runner, a small grid sweep,
+and an analysis script that turns CSV into plots for speedup vs GPipe and scaling efficiency.
+
 
 
 ---
@@ -147,37 +148,23 @@ On CPU, 1F1B is best for small or deeper configurations at P=2 and it is still s
 </p>
 At P=2 the winners sit near 50–60 percent efficiency for example 4L-4H with 1F1B is about 60 percent. Wider 4L-8H models are slightly lower around 48–51 percent which reflects more per-stage compute. At P=4 efficiency drops to about 24–27 percent across schedules. With the gloo backend on CPU, tokens per second still rises but barrier latency, context switches and tensor hand-offs grow faster than useful work per stage.
 
-Going from 2 to 4 processes increases throughput but scales poorly on CPU at roughly 25 percent efficiency because communication and synchronization dominate. At P=2 both 1F1B and Interleaved maintain roughly 50–60 percent. At P=4 their scheduling advantages are largely eaten by overhead.
+Going from 2 to 4 processes increases throughput but scales poorly on CPU at roughly 25 percent efficiency because communication and synchronization dominate. At P=2 both 1F1B and Interleaved maintain roughly 50–60 percent. At $P=4$ their scheduling advantages are largely eaten by overhead.
 
-A forward-then-backward pipeline of M micro-batches costs ≈ `2M + 2(K−1)` ticks. **1F1B** overlaps the middle bubbles, reducing the fixed `O(K)` overhead. Interleaved shortens fill/drain by `1/v` with virtual stages. On CPU, the added inter-rank hand-offs at higher **P** can outweigh those savings.
+A forward-then-backward pipeline of $M$ micro-batches costs ≈ `2M + 2(K−1)` ticks. 1F1B overlaps the middle bubbles, reducing the fixed `O(K)` overhead. Interleaved shortens fill/drain by `1/v` with virtual stages. On CPU, the added inter-rank hand-offs at higher $P$ can outweigh those savings.
 
+## CPU impact (why these patterns show up)
 
-### Why these patterns appear on CPU
+GPipe: Fewer cross-rank hand-offs and simpler coordination per unit of useful work. At higher process counts this smaller communication footprint can outweigh bubble costs, which matches the cases where GPipe is competitive or best.
 
-- GPipe. Fewer cross-rank hand-offs and simpler coordination per unit of useful work. At higher process counts this lower communication footprint can outweigh bubble costs, which matches the cases where GPipe is competitive or best.
+1F1B: Alternating forward and backward introduces more frequent synchronization than GPipe. At small process counts the overlap benefit dominates and we see clear wins. At higher process counts on CPU, extra barriers and context switches reduce or erase the advantage.
 
-- 1F1B. Alternating forward and backward creates more frequent synchronization than GPipe. At small process counts the overlap benefit dominates and we see clear wins. At higher process counts on CPU the extra barriers and context switches reduce or erase the advantage.
+Interleaved: Splitting into v virtual stages reduces fill and drain time but increases cross-rank hand-offs by about v. At small process counts and with wider models this keeps ranks busy and can win. At higher process counts on CPU the extra sends/receives and scheduling overhead offset the bubble savings, leading to parity or a small deficit.
 
-- Interleaved. Splitting into v virtual stages reduces fill and drain time but increases cross-rank hand-offs by about v. At small process counts and wider models this keeps ranks busy and can win. At higher process counts on CPU the extra sends and receives and scheduling overhead offset the bubble savings, leading to parity or a small deficit.
+System effects on CPU: gloo has higher per-message latency than NCCL; multi-process training adds barrier and context-switch overhead; compute per stage is smaller so the compute/communication ratio is worse; NUMA and memory bandwidth contention can add variability; and per-micro-batch overheads (autograd bookkeeping and dispatcher costs) are non-trivial. Together these increase the fixed costs that don’t shrink with model size, explaining the drop from roughly 50–60 percent efficiency at two processes to roughly 24–27 percent at four processes.
 
-
-## CPU impact:
-
-Running pipeline schedules on **CPU** with the **gloo** backend shifts the balance between **compute** and **communication** compared to the typical **GPU + NCCL** setting:
-
-- Higher per-message latency with gloo on CPU: Inter-rank transfers and barriers often run over loopback TCP on a single node. Small tensors and frequent sends and receives as in Interleaved which creates v times more stage boundaries become latency dominated and the benefit from bubble reduction shrinks.
-
-- Lower compute per stage leads to a worse compute to communication ratio: On CPU a Transformer layer is slower than on GPU, but communication and synchronization do not shrink proportionally. When each stage is cheap the relative cost of coordination like barriers, sends and context switches dominates. This is why GPipe with fewer transfers can look better at larger process counts even though it has bigger bubbles.
-
-- Process scheduling and barriers: torchrun uses multi-process training. Each micro-batch step in these schedules introduces barriers and hand-offs. On CPU OS context switches and Python control overhead are non-trivial and at P=4 these costs stack up and erode 1F1B and Interleaved gains.
-
-- Backend and kernel efficiency: GPUs use NCCL and fused kernels where communication can overlap with compute and use GPUDirect or NVLink. On CPU you lack those and you also pay more Python overhead per micro-batch and per schedule step.
-
-- Memory hierarchy and NUMA effects: Multiple CPU ranks can thrash caches and contend for memory bandwidth. If ranks land on different NUMA nodes cross-node traffic increases variability and latency which worsens with more ranks and more stage boundaries.
-
-- Per-microbatch overheads: Pipeline micro-batching reduces bubbles, but each micro-batch introduces fixed costs such as autograd bookkeeping, dispatcher overhead and send or receive. With small micro-batches those costs are a large fraction of total time.
 
 **Implication.**  
-On CPU, increasing process count raises tokens per second but scales poorly because communication and synchronization overheads grow faster than useful compute per stage. Hence the pattern you see. 1F1B wins at small process counts thanks to overlap and limited communication. Interleaved helps at P=2 for wider models since more virtual stages keep ranks busier. At P=4 the extra hand-offs flatten or reverse the gains and GPipe’s simplicity becomes competitive.
+On CPU, increasing process count raises tokens per second but scales poorly because communication and synchronization overheads grow faster than useful compute per stage. Hence the pattern you see: 1F1B wins at small process counts thanks to overlap and limited communication. Interleaved helps at P=2 for wider models since more virtual stages keep ranks busier. At P=4 the extra hand-offs flatten or reverse the gains and GPipe’s simplicity becomes competitive.
+
 
 
