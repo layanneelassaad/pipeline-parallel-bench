@@ -124,8 +124,8 @@ P=4 ≈ 24–27%
 
 **Figure: Speedup vs GPipe.**  
 
-For the **4L-4H** model at **P=2**, **1F1B** delivers about **1.20×** GPipe while **Interleaved** is ~**1.13×**. This matches the intuition that when each pipeline stage is relatively cheap, alternating forward/backward quickly erases the middle bubbles and keeps ranks busy with minimal coordination cost. At **P=4** on CPU, the advantage narrows: **1F1B** is only ~**1.04×**, and **Interleaved** drops to parity (≈**1.00×**). The extra barriers and hand-offs introduced at higher process counts eat into the gains that overlap provides.
-For the **4L-8H** model, widening increases per-stage compute a bit. At **P=2**, **Interleaved** edges ahead at ~**1.03×** GPipe, while **1F1B** dips slightly below (**~0.96×**). Splitting each stage into virtual chunks keeps the pipeline better utilized at small P by shortening stage latency and reducing the visible bubble. However, at **P=4** both **1F1B** (~**0.99×**) and **Interleaved** (~**0.97×**) fall behind GPipe on CPU; the extra cross-rank transfers (v× more for Interleaved) plus more synchronization dominate at larger P.
+For the **4L-4H** model at **P=2**, **1F1B** delivers about **1.20×** GPipe while **Interleaved** is **1.13×**. This matches the intuition that when each pipeline stage is relatively cheap, alternating forward/backward quickly erases the middle bubbles and keeps ranks busy with minimal coordination cost. At **P=4** on CPU, the advantage narrows: **1F1B** is only about 1.04x, and Interleaved drops to parity (≈**1.00×**). The extra barriers and hand-offs introduced at higher process counts eat into the gains that overlap provides.
+For the **4L-8H** model, widening increases per-stage compute a bit. At **P=2**, **Interleaved** edges ahead at **1.03×** GPipe, while **1F1B** dips slightly below (**0.96×**). Splitting each stage into virtual chunks keeps the pipeline better utilized at small P by shortening stage latency and reducing the visible bubble. However, at **P=4** both **1F1B** (**0.99×**) and **Interleaved** (**0.97×**) fall behind GPipe on CPU; the extra cross-rank transfers (v× more for Interleaved) plus more synchronization dominate at larger P.
 
 On CPU, **1F1B** is best for **small/deep-ish** configs at **P=2** and still slightly ahead at **P=4** when stages are cheap (4L-4H). **Interleaved** can win at **P=2** for **wider** models (4L-8H) by adding virtual stages, but at **P=4** its extra hand-offs negate the benefit; **GPipe** becomes competitive or best.
 
@@ -135,12 +135,12 @@ On CPU, **1F1B** is best for **small/deep-ish** configs at **P=2** and still sli
  </p>
  
 **Figure: Scaling efficiency (%).**  
-- **P=2:** Winners sit ~**50–60%** efficient (e.g., 4L-4H with 1F1B ≈ 60%). Wider 4L-8H models are slightly lower (~**48–51%**), reflecting more per-stage compute.  
-- **P=4:** Efficiency drops to ~**24–27%** across schedules. With `gloo` on CPU, tokens/s still rises, but barrier latency, context switches, and tensor hand-offs grow faster than useful work per stage.
+- **P=2:** Winners sit **50–60%** efficient (e.g., 4L-4H with 1F1B ≈ 60%). Wider 4L-8H models are slightly lower (**48–51%**), reflecting more per-stage compute.  
+- **P=4:** Efficiency drops to **24–27%** across schedules. With `gloo` on CPU, tokens/s still rises, but barrier latency, context switches, and tensor hand-offs grow faster than useful work per stage.
 
-Going from **2 → 4** processes **increases throughput but scales poorly on CPU** (≈**25%** efficiency) because communication and synchronization dominate. At **P=2**, both **1F1B** and **Interleaved** maintain ~**50–60%**; at **P=4**, their scheduling advantages are largely eaten by overhead.
+Going from **2 → 4** processes **increases throughput but scales poorly on CPU** (≈**25%** efficiency) because communication and synchronization dominate. At **P=2**, both **1F1B** and **Interleaved** maintain **50–60%**; at **P=4**, their scheduling advantages are largely eaten by overhead.
 
-A forward-then-backward pipeline of **M** micro-batches costs ≈ `2M + 2(K−1)` ticks. **1F1B** overlaps the middle bubbles, reducing the fixed `O(K)` overhead; **Interleaved** shortens fill/drain by ~`1/v` with virtual stages. On CPU, the added inter-rank hand-offs at higher **P** can outweigh those savings.
+A forward-then-backward pipeline of **M** micro-batches costs ≈ `2M + 2(K−1)` ticks. **1F1B** overlaps the middle bubbles, reducing the fixed `O(K)` overhead; **Interleaved** shortens fill/drain by `1/v` with virtual stages. On CPU, the added inter-rank hand-offs at higher **P** can outweigh those savings.
 
 
 ## CPU impact:
