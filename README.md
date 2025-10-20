@@ -152,7 +152,7 @@ Going from 2 to 4 processes increases throughput but scales poorly on CPU at rou
 
 A forward-then-backward pipeline of $M$ micro-batches costs ≈ `2M + 2(K−1)` ticks. 1F1B overlaps the middle bubbles, reducing the fixed `O(K)` overhead. Interleaved shortens fill/drain by `1/v` with virtual stages. On CPU, the added inter-rank hand-offs at higher $P$ can outweigh those savings.
 
-## CPU impact (why these patterns show up)
+## CPU impact 
 
 GPipe: Fewer cross-rank hand-offs and simpler coordination per unit of useful work. At higher process counts this smaller communication footprint can outweigh bubble costs, which matches the cases where GPipe is competitive or best.
 
