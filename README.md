@@ -12,7 +12,7 @@ and an analysis script that turns CSV into plots for speedup vs GPipe and scalin
 
 **Pipeline parallelism** does two things:
 
-1) Stage the model: split the network into $K$ sequential stages and assign consecutive layers to ranks (GPUs/CPUs) `0..K-1`.  
+1) Stage the model: split the network into $K$ sequential stages and assign consecutive layers to ranks `0..K-1`.  
    Each stage runs forward/backward for its layers only.
 
 2) Split the global batch into M micro-batches and inject them sequentially through the pipeline.
