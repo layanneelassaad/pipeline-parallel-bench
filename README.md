@@ -1,4 +1,4 @@
-# Pipeline Parallelism Benchmarks (PyTorch, CPU)
+# Pipeline Parallelism: Benchmarking GPipe, 1F1B & Interleaved for Distributed Training (CPU)
 
 This repo compares GPipe, 1F1B, and Interleaved-1F1B pipeline schedules using PyTorch’s
 `torch.distributed.pipelining` with CPU distributed training. It provides a CLI runner, a small grid sweep,
