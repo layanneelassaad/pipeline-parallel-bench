@@ -142,5 +142,30 @@ Going from **2 → 4** processes **increases throughput but scales poorly on CPU
 A forward-then-backward pipeline of **M** micro-batches costs ≈ `2M + 2(K−1)` ticks. **1F1B** overlaps the middle bubbles, reducing the fixed `O(K)` overhead; **Interleaved** shortens fill/drain by ~`1/v` with virtual stages. On CPU, the added inter-rank hand-offs at higher **P** can outweigh those savings.
 
 
+## CPU impact:
+
+Running pipeline schedules on **CPU** with the **gloo** backend shifts the balance between **compute** and **communication** compared to the typical **GPU + NCCL** setting:
+
+- **Higher per-message latency (gloo on CPU).**  
+  Inter-rank transfers and barriers are handled by gloo (often over loopback TCP on a single node). Small tensors and frequent sends/receives (especially with **Interleaved**, which creates **v×** more stage boundaries) become **latency dominated**, shrinking the benefit from bubble reduction.
+
+- **Lower compute per stage ⇒ worse compute/comm ratio.**  
+  On CPU, a Transformer layer is orders of magnitude slower than on GPU, but **communication and synchronization don’t shrink proportionally**. When each stage is “cheap,” the relative cost of coordination (barriers, sends, context switches) **dominates**. This is why **GPipe** (fewer transfers) can look better at larger **P** even though it has bigger bubbles.
+
+- **Process scheduling & barriers.**  
+  `torchrun` uses **multi-process** training. Each micro-batch step in these schedules introduces **barriers** and hand-offs. On CPU, OS context switches and Python control overhead are non-trivial; at **P=4** these costs stack up and **erode 1F1B/Interleaved gains**.
+
+- **Backend & kernel efficiency.**  
+  GPUs use **NCCL** and **fused kernels**; comm can overlap with compute and use GPUDirect/NVLink. On CPU, you lack those; you also pay more Python-side overhead per micro-batch/schedule step.
+
+- **Memory hierarchy & NUMA effects.**  
+  Multiple CPU ranks can thrash caches and contend for memory bandwidth. If ranks land on different NUMA nodes, cross-node traffic increases variability and latency (worsens with more ranks and more stage boundaries).
+
+- **Per-microbatch overheads.**  
+  Pipeline micro-batching reduces bubbles, but **each micro-batch introduces fixed costs** (autograd bookkeeping, dispatcher overhead, send/recv). With **small micro-batches** those costs are a large fraction of total time.
+
+**Implication.**  
+On CPU, increasing **P** raises tokens/s but **scales poorly** because comm/sync overheads grow faster than useful compute per stage. Hence the pattern you see: **1F1B** wins at small **P** (great overlap, limited comm), **Interleaved** helps at **P=2** for wider models (more virtual stages keep ranks busy), but at **P=4** the extra hand-offs flatten or reverse the gains; **GPipe**’s simplicity becomes competitive.
+
 
 
